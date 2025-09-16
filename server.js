@@ -1,55 +1,27 @@
 'use strict';
-require('dotenv').config();
-const express     = require('express');
-const bodyParser  = require('body-parser');
-const cors        = require('cors');
 
-const apiRoutes         = require('./routes/api.js');
-const fccTestingRoutes  = require('./routes/fcctesting.js');
-const runner            = require('./test-runner');
+const express = require('express');
+const bodyParser = require('body-parser');
+const cors = require('cors');
+require('dotenv').config();
 
 const app = express();
 
-app.use('/public', express.static(process.cwd() + '/public'));
+// Trust proxy para IPs en Replit/Heroku/Render
+app.set('trust proxy', true);
 
-app.use(cors({origin: '*'})); //For FCC testing purposes only
-
+// Middlewares
+app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-//Index page (static HTML)
-app.route('/')
-  .get(function (req, res) {
-    res.sendFile(process.cwd() + '/views/index.html');
-  });
+// Rutas de la API
+require('./routes/api.js')(app);
 
-//For FCC testing purposes
-fccTestingRoutes(app);
-
-//Routing for API 
-apiRoutes(app);  
-    
-//404 Not Found Middleware
-app.use(function(req, res, next) {
-  res.status(404)
-    .type('text')
-    .send('Not Found');
+// Inicio de servidor
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, function () {
+  console.log(`🚀 Servidor escuchando en puerto ${PORT}`);
 });
 
-//Start our server and tests!
-const listener = app.listen(process.env.PORT || 5000, '0.0.0.0', function () {
-  console.log('Your app is listening on port ' + listener.address().port);
-  if(process.env.NODE_ENV==='test') {
-    console.log('Running Tests...');
-    setTimeout(function () {
-      try {
-        runner.run();
-      } catch(e) {
-        console.log('Tests are not valid:');
-        console.error(e);
-      }
-    }, 3500);
-  }
-});
-
-module.exports = app; //for testing
+module.exports = app; // exportar para pruebas
