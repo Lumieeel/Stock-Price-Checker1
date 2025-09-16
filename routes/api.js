@@ -1,23 +1,33 @@
 'use strict';
 
-const mongoose = require('mongoose');
+const { Pool } = require('pg');
 const axios = require('axios');
 const helmet = require('helmet');
 const crypto = require('crypto');
 require('dotenv').config();
 
-// Conexión a MongoDB
-const MONGODB_URI = process.env.DB;
-mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log('✅ MongoDB conectado'))
-  .catch(err => console.error('❌ Error de MongoDB:', err.message));
-
-// Esquema de acciones
-const stockSchema = new mongoose.Schema({
-  symbol: { type: String, required: true, uppercase: true, unique: true },
-  ips: { type: [String], default: [] }
+// Conexión a PostgreSQL
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
 });
-const Stock = mongoose.model('Stock', stockSchema);
+
+// Crear tabla si no existe
+async function createTable() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS stocks (
+        id SERIAL PRIMARY KEY,
+        symbol VARCHAR(10) UNIQUE NOT NULL,
+        ips JSONB DEFAULT '[]'::jsonb
+      )
+    `);
+    console.log('✅ PostgreSQL conectado y tabla creada');
+  } catch (err) {
+    console.error('❌ Error de PostgreSQL:', err.message);
+  }
+}
+
+createTable();
 
 // Función para obtener precio
 async function getStockPrice(symbol) {
@@ -67,13 +77,29 @@ module.exports = function (app) {
         const prices = await Promise.all(stock.map(s => getStockPrice(s)));
 
         const docs = await Promise.all(prices.map(async p => {
-          let d = await Stock.findOne({ symbol: p.symbol });
-          if (!d) d = new Stock({ symbol: p.symbol });
-          if (likeFlag && ip && !d.ips.includes(ip)) {
-            d.ips.push(ip);
-            await d.save();
+          // Buscar o crear registro
+          let result = await pool.query('SELECT * FROM stocks WHERE symbol = $1', [p.symbol]);
+          let stockData;
+          
+          if (result.rows.length === 0) {
+            // Crear nuevo registro
+            const insertResult = await pool.query(
+              'INSERT INTO stocks (symbol, ips) VALUES ($1, $2) RETURNING *',
+              [p.symbol, JSON.stringify([])]
+            );
+            stockData = insertResult.rows[0];
+          } else {
+            stockData = result.rows[0];
           }
-          return { symbol: p.symbol, price: p.price, likes: d.ips.length };
+          
+          // Manejar likes
+          let ips = stockData.ips || [];
+          if (likeFlag && ip && !ips.includes(ip)) {
+            ips.push(ip);
+            await pool.query('UPDATE stocks SET ips = $1::jsonb WHERE symbol = $2', [JSON.stringify(ips), p.symbol]);
+          }
+          
+          return { symbol: p.symbol, price: p.price, likes: ips.length };
         }));
 
         const relLikes = [
@@ -86,14 +112,29 @@ module.exports = function (app) {
         stock = stock.toUpperCase();
         const { symbol, price } = await getStockPrice(stock);
 
-        let doc = await Stock.findOne({ symbol });
-        if (!doc) doc = new Stock({ symbol });
-        if (likeFlag && ip && !doc.ips.includes(ip)) {
-          doc.ips.push(ip);
-          await doc.save();
+        // Buscar o crear registro
+        let result = await pool.query('SELECT * FROM stocks WHERE symbol = $1', [symbol]);
+        let stockData;
+        
+        if (result.rows.length === 0) {
+          // Crear nuevo registro
+          const insertResult = await pool.query(
+            'INSERT INTO stocks (symbol, ips) VALUES ($1, $2) RETURNING *',
+            [symbol, JSON.stringify([])]
+          );
+          stockData = insertResult.rows[0];
+        } else {
+          stockData = result.rows[0];
+        }
+        
+        // Manejar likes
+        let ips = stockData.ips || [];
+        if (likeFlag && ip && !ips.includes(ip)) {
+          ips.push(ip);
+          await pool.query('UPDATE stocks SET ips = $1::jsonb WHERE symbol = $2', [JSON.stringify(ips), symbol]);
         }
 
-        return res.json({ stockData: { stock: symbol, price, likes: doc.ips.length } });
+        return res.json({ stockData: { stock: symbol, price, likes: ips.length } });
       }
     } catch (err) {
       console.error(err);
