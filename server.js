@@ -19,7 +19,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 require('./routes/api.js')(app);
 
 // Inicio de servidor
-const PORT = process.env.PORT || 3000;
+const PORT = 5000;
 app.listen(PORT, function () {
   console.log(`🚀 Servidor escuchando en puerto ${PORT}`);
 });
