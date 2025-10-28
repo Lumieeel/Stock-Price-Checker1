@@ -1,63 +1,64 @@
 'use strict';
 require('dotenv').config();
-const express     = require('express');
-const bodyParser  = require('body-parser');
-const cors        = require('cors');
-const helmet      = require('helmet');   // 👈 Importamos helmet
 
-const apiRoutes         = require('./routes/api.js');
-const fccTestingRoutes  = require('./routes/fcctesting.js');
-const runner            = require('./test-runner');
+const express = require('express');
+const cors    = require('cors');
+const path    = require('path');
+const helmet  = require('helmet');
+
+const apiRoutes        = require('./routes/api.js');       // exporta un Router
+const fccTestingRoutes = require('./routes/fcctesting.js');
+const runner           = require('./test-runner');
 
 const app = express();
+app.set('trust proxy', 1);
 
-app.use('/public', express.static(process.cwd() + '/public'));
-
-app.use(cors({origin: '*'})); //For FCC testing purposes only
-
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-
-// ✅ Seguridad: configurar Content Security Policy (scripts y estilos solo desde el mismo servidor)
-app.use(
-  helmet.contentSecurityPolicy({
-    useDefaults: true,
+// ── Helmet v6: 1 sola cabecera CSP, sin headers legados ──
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: false,
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'"],
+      scriptSrc:  ["'self'"],
+      styleSrc:   ["'self'"],
     },
-  })
-);
+  },
+  // Evita políticas extra que algunos PaaS agregan por defecto
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy:  false,
+  crossOriginResourcePolicy: { policy: 'same-origin' },
+}));
 
-//Index page (static HTML)
-app.route('/')
-  .get(function (req, res) {
-    res.sendFile(process.cwd() + '/views/index.html');
-  });
+// Estáticos y middlewares
+app.use('/public', express.static(path.join(process.cwd(), 'public')));
+app.use(cors({ origin: '*' }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-//For FCC testing purposes
-fccTestingRoutes(app);
-
-//Routing for API 
-apiRoutes(app);  
-
-//404 Not Found Middleware
-app.use(function(req, res, next) {
-  res.status(404)
-    .type('text')
-    .send('Not Found');
+// Home
+app.get('/', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'views', 'index.html'));
 });
 
-//Start our server and tests!
-const listener = app.listen(process.env.PORT || 5000, '0.0.0.0', function () {
+// Rutas FCC (función)
+fccTestingRoutes(app);
+
+// Rutas API (Router)
+app.use('/', apiRoutes);
+
+// 404
+app.use((req, res) => {
+  res.status(404).type('text').send('Not Found');
+});
+
+// Start + runner local
+const listener = app.listen(process.env.PORT || 5000, '0.0.0.0', () => {
   console.log('Your app is listening on port ' + listener.address().port);
-  if(process.env.NODE_ENV==='test') {
+  if (process.env.NODE_ENV === 'test') {
     console.log('Running Tests...');
-    setTimeout(function () {
-      try {
-        runner.run();
-      } catch(e) {
+    setTimeout(() => {
+      try { runner.run(); }
+      catch (e) {
         console.log('Tests are not valid:');
         console.error(e);
       }
@@ -65,4 +66,4 @@ const listener = app.listen(process.env.PORT || 5000, '0.0.0.0', function () {
   }
 });
 
-module.exports = app; //for testing
+module.exports = app;
