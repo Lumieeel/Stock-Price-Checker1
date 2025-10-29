@@ -16,7 +16,7 @@ app.set('trust proxy', 1);
 // ── Helmet v6: 1 sola cabecera CSP, sin headers legados ──
 app.use(helmet({
   contentSecurityPolicy: {
-    useDefaults: false,
+    useDefaults: true,
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc:  ["'self'"],
